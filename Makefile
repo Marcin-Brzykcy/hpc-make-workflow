@@ -16,6 +16,7 @@ SLURM_SCRIPT ?= slurm.sl
 PULL_FROM ?= $(SRC_DIR)/output.txt
 PULL_TO ?= downloads
 PERSIST ?= 2h
+REBUILD ?= 0
 
 SSH_CFG := $(CURDIR)/.hpc/ssh_config
 SSH = ssh -F $(SSH_CFG)
@@ -29,9 +30,10 @@ CFLAGS_ARG = $(if $(strip $(COMPILER_FLAGS)),CFLAGS=$(call escape_spaces,$(COMPI
 LDFLAGS_ARG = $(if $(strip $(LINKER_FLAGS)),LDFLAGS=$(call escape_spaces,$(LINKER_FLAGS)),)
 TARGET_ARG = $(if $(strip $(TARGET)),TARGET=$(TARGET),)
 
-.PHONY: help check cfg login logout status sync build run all ls exec pull queue cancel shell clean-remote
+.PHONY: help check cfg login logout status sync run all exec pull queue cancel shell clean-remote _build
 help:
-	@echo 'Targets: login, sync, build, run, all, pull, queue, cancel, shell, status, logout, ls, exec, clean-remote'
+	@echo 'Targets: login, sync, run, pull, queue, cancel, shell, status, logout, exec, clean-remote'
+	@echo 'make run syncs, builds, submits and downloads output; use REBUILD=1 to force recompilation.'
 	@echo 'Copy .env.example to .env and configure your cluster; see README.md.'
 
 check:
@@ -69,17 +71,25 @@ status: cfg
 sync: cfg
 	$(SSH) hpc-cluster "mkdir -p $(REMOTE_DIR)/$(SRC_DIR)"
 	rsync -avz --exclude 'output.txt' -e "$(SSH)" "$(SRC_DIR)/" "hpc-cluster:$(REMOTE_DIR)/$(SRC_DIR)/"
-build: cfg
-	$(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && $(SRUN_CMD) $(PARTITION_ARG) $(ACCOUNT_ARG) --nodes=1 --ntasks=1 --time=$(BUILD_TIME) bash -lc '$(MODULE_LOAD)make CC=$(COMPILER) $(CFLAGS_ARG) $(LDFLAGS_ARG) $(TARGET_ARG) $(BUILD_ARGS)'"
-run: cfg
-	$(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && bash -lc '$(MODULE_LOAD)sbatch --wait $(PARTITION_ARG) $(ACCOUNT_ARG) $(SLURM_SCRIPT)'"
-# Recursive calls guarantee ordering, including when invoked with make -j.
-all:
+_build: cfg
+	$(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && $(SRUN_CMD) $(PARTITION_ARG) $(ACCOUNT_ARG) --nodes=1 --ntasks=1 --time=$(BUILD_TIME) bash -lc '$(MODULE_LOAD)make $(if $(filter 1,$(REBUILD)),-B,) CC=$(COMPILER) $(CFLAGS_ARG) $(LDFLAGS_ARG) $(TARGET_ARG) $(BUILD_ARGS)'"
+# Recursive calls preserve ordering even under make -j.
+run:
+	@./scripts/slurm-output.sh "$(SRC_DIR)/$(SLURM_SCRIPT)" >/dev/null
 	+$(MAKE) sync
-	+$(MAKE) build
-	+$(MAKE) run
-ls: cfg
-	$(SSH) hpc-cluster "ls -lht $(REMOTE_DIR)"
+	+$(MAKE) _build
+	@output=$$(./scripts/slurm-output.sh "$(SRC_DIR)/$(SLURM_SCRIPT)") || exit $$?; \
+	  status=0; \
+	  job=$$($(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && bash -lc '$(MODULE_LOAD)sbatch --parsable --wait $(PARTITION_ARG) $(ACCOUNT_ARG) $(SLURM_SCRIPT)'") || status=$$?; \
+	  job=$${job%%;*}; \
+	  case "$$job" in ''|*[!0-9]*) echo "Could not determine Slurm job ID: $$job" >&2; exit 1;; esac; \
+	  echo "Slurm job $$job finished (status $$status)"; \
+	  output=$$(printf '%s\n' "$$output" | sed "s/%j/$$job/g"); \
+	  mkdir -p "$(PULL_TO)" || exit $$?; \
+	  rsync -avz -e "$(SSH)" "hpc-cluster:$(REMOTE_DIR)/$(SRC_DIR)/$$output" "$(PULL_TO)/" || exit $$?; \
+	  exit $$status
+# Backward-compatible alias.
+all: run
 exec: cfg
 	@test -n "$(CMD)" || { echo 'Usage: make exec CMD="command"'; exit 1; }
 	$(SSH) hpc-cluster "cd $(REMOTE_DIR) && $(CMD)"
