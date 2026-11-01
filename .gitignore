@@ -6,4 +6,5 @@ examples/openmp/openmp
 examples/cuda/cuda-example
 examples/hello/output.txt
 *.o
+*.dSYM/
 .DS_Store
