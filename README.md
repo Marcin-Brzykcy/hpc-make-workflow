@@ -33,6 +33,56 @@ make pull SRC_DIR=my-project PULL_FROM=my-project/results.txt
 
 The selected directory is copied to `~/REMOTE_DIR/SRC_DIR` on the cluster. Keep paths relative and simple (no spaces or shell metacharacters). `rsync` does not delete remote files; it excludes `output.txt` to avoid overwriting existing results. If using another output filename, avoid keeping a local copy in the source directory before syncing.
 
+## Examples
+
+Configure `.env` and run `make login` first. Each example has its own build Makefile and Slurm script; `make pull SRC_DIR=...` downloads that example's `output.txt`. Choose the partition and account your site requires.
+
+### Plain C
+
+The default `examples/hello` builds and runs a small C program:
+
+```sh
+make all SRC_DIR=examples/hello
+make pull SRC_DIR=examples/hello
+```
+
+### Different compilation flags
+
+The top-level `COMPILER_FLAGS` replaces the child project's default `CFLAGS`; `LINKER_FLAGS` sets `LDFLAGS`. The hello example uses a compile-time `VERBOSE` option as a simple preprocessor-flag demonstration. Clean first when changing flags: Make does not automatically rebuild just because flags changed.
+
+```sh
+make sync SRC_DIR=examples/hello
+make clean-remote SRC_DIR=examples/hello
+make build SRC_DIR=examples/hello COMPILER_FLAGS='-O0 -g -Wall -DVERBOSE'
+make run SRC_DIR=examples/hello
+make pull SRC_DIR=examples/hello
+```
+
+For optimized builds, use e.g. `COMPILER_FLAGS='-O3 -Wall'`. Project-specific Make variables can also be supplied with `BUILD_ARGS`, for example `BUILD_ARGS='CPPFLAGS=-DVERBOSE'`. These settings affect the build, so use the same settings on subsequent rebuilds.
+
+### OpenMP
+
+Based on the original thread greeting and thread-count sweep, this example builds with `-fopenmp` and runs with 1, 2 and 4 threads within a four-CPU allocation:
+
+```sh
+make all SRC_DIR=examples/openmp
+make pull SRC_DIR=examples/openmp
+```
+
+Use a compiler with OpenMP support; load the appropriate module with `MODULES` if needed. When overriding `COMPILER_FLAGS`, include `-fopenmp` yourself (or your compiler's equivalent). Adjust `--cpus-per-task` and the thread counts together to match your allocation.
+
+### CUDA
+
+The original project includes an incomplete CUDA Mandelbrot skeleton. This standalone example instead demonstrates the same GPU kernel-launch pattern without its additional libraries. It needs the CUDA toolkit (`nvcc`) and an NVIDIA GPU:
+
+```sh
+# Replace the partition and module with names provided by your cluster.
+make all SRC_DIR=examples/cuda PARTITION=gpu MODULES=cuda
+make pull SRC_DIR=examples/cuda
+```
+
+The sample script requests one GPU with `--gres=gpu:1`; adapt that directive to your site's Slurm policy. `MODULES` is loaded before build and submission; make sure the module environment is also available inside jobs on your site. The CUDA Makefile uses `NVCC` and `NVCCFLAGS`, not `COMPILER` or `COMPILER_FLAGS`. For example, pass `BUILD_ARGS='NVCCFLAGS=-O3'` to `make build` with a toolkit that defaults to C++11 or later. Select architecture flags supported by your toolkit and GPU as needed. The build allocation itself uses the configured partition; choose a partition that permits builds, or run `sync`, `build`, and `run` separately with appropriate partitions.
+
 ## Commands
 
 | Command | Action |

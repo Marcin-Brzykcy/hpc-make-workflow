@@ -2,6 +2,8 @@
 .hpc/
 downloads/
 examples/hello/hello
+examples/openmp/openmp
+examples/cuda/cuda-example
 examples/hello/output.txt
 *.o
 .DS_Store
