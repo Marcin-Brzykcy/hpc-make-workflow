@@ -1,117 +1,148 @@
-# HPC Make workflow
+# Run projects on a cluster with Make
 
-Edit locally, then synchronize, build and run a project on a Slurm cluster through an SSH gateway. Based on an ICM cluster workflow; cluster hostnames such as `okeanos`, `rysy` and `topola` can be used, but nothing is tied to a particular account.
+Edit your code on your computer. This Makefile copies it to a cluster, compiles it, runs it as a Slurm job, and downloads the output. You run the commands below in a terminal **on your computer**, unless stated otherwise.
 
-## Requirements
+You need an account on a Slurm cluster reachable through an SSH gateway, plus GNU Make, SSH and rsync on your computer. The gateway and cluster must use the same login name.
 
-- GNU Make, SSH and rsync locally; SSH access to a gateway and a cluster reachable from it.
-- Slurm (`srun`, `sbatch`, `squeue`, `scancel`), Make and a compiler on the cluster.
-- The same login name on gateway and cluster. Configure your SSH keys or enter passwords and any OTP interactively; no passwords are stored by this project. Verify host keys when prompted.
+## Files
 
-## Quick start
+```text
+Makefile                  Commands you run on your computer
+.env.example              Template for your cluster settings
+examples/
+  basic_c/                A simple C program
+  openmp/                 A C program using multiple CPU threads
+  cuda/                   A CUDA program for an NVIDIA GPU
+```
+
+Each example has its own source code, `Makefile` (how to compile), and `slurm.sl` (how to run on the cluster).
+
+## 1. Set up your connection
+
+Open a terminal and go to this repository. If you have not cloned it yet:
+
+```sh
+git clone https://github.com/Marcin-Brzykcy/hpc-make-workflow.git
+cd hpc-make-workflow
+```
+
+Create your settings file:
 
 ```sh
 cp .env.example .env
-# Edit .env: set HPC_USER, HPC_CENTRAL, CLUSTER and, if required, HPC_ACCOUNT.
-make login          # authenticate to gateway and cluster
-make run            # sync, build, submit, wait, and download output
+```
+
+Open `.env` in a text editor and change these values:
+
+| Setting | What to enter |
+| --- | --- |
+| `HPC_USER` | Your cluster login name |
+| `HPC_CENTRAL` | Your gateway hostname, for example `hpc.icm.edu.pl` |
+| `CLUSTER` | The cluster hostname, for example `okeanos` |
+| `HPC_ACCOUNT` | Your Slurm account, if required; otherwise leave it empty |
+| `PARTITION` | Your Slurm partition; by default this uses `CLUSTER` |
+
+Leave `SRC_DIR` and `REMOTE_DIR` as they are for the first example. Ask your cluster administrator if you do not know the connection or Slurm settings. Do **not** put passwords in `.env`.
+
+## 2. Log in
+
+```sh
+make login
+```
+
+Enter your password and one-time code if prompted. Verify host keys when connecting for the first time. The connection is reused for later commands; you can close it when finished with `make logout`.
+
+## 3. Compile and run the basic C example
+
+```sh
+make run
+```
+
+This copies `examples/basic_c` to the cluster, compiles it, submits the job, waits for it to finish, and downloads its output. It may take time for Slurm to start the job.
+
+To force recompilation, for example after changing compiler flags:
+
+```sh
+make run REBUILD=1 COMPILER_FLAGS='-O0 -g -Wall -DVERBOSE'
+```
+
+## 4. Read or download output
+
+After `make run` finishes, read the downloaded output on your computer:
+
+```sh
 cat downloads/output.txt
-make logout
 ```
 
-The example builds `examples/basic_c/basic_c.c` using its own Makefile and runs it using `examples/basic_c/slurm.sl`. `make run` waits for the job and downloads its Slurm output to `downloads/`. SSH verifies gateway and cluster host keys against your known-hosts files. The workflow uses its own generated `.hpc/ssh_config` instead of `~/.ssh/config` and reuses SSH connections for two hours by default. If you need custom SSH settings (such as a non-default identity), add them to the `cfg` recipe. `.env`, `.hpc/` and downloaded output are ignored by Git.
+The output filename is set in the example's `Makefile` with `OUTPUT_FILE = output.txt`. Change it there to use a different name. `make run` tells Slurm to use this filename, even if `slurm.sl` specifies another one. Use a simple relative path; `%j` can be used for the job ID. Other Slurm substitutions, job arrays, and separate error files are not downloaded automatically.
 
-## Your own project
-
-Create a directory inside this repository with a Makefile (default target builds your program; `clean` removes build products) and a Slurm script named `slurm.sl`. Set `OUTPUT_FILE = output.txt` in the project Makefile. The script should run your executable and set its resource requirements via `#SBATCH` directives. Set `SRC_DIR` in the root `.env`, or override it on the command line:
+To download **another** file, use `make pull`. `PULL_FROM` is relative to the remote `REMOTE_DIR` (not to your home directory). For example:
 
 ```sh
-make run SRC_DIR=my-project
-make pull SRC_DIR=my-project PULL_FROM=my-project/results.txt
+make pull PULL_FROM=examples/basic_c/results.txt PULL_TO=downloads
 ```
 
-The selected directory is copied to `~/REMOTE_DIR/SRC_DIR` on the cluster. Keep paths relative and simple (no spaces or shell metacharacters). `rsync` does not delete remote files; it excludes `.env`, `output.txt` and the configured output pattern to avoid copying configuration or overwriting results. If using `%j` in the output name, avoid keeping matching local output files in the source directory before syncing.
+`PULL_TO` is the local destination directory and defaults to `downloads`.
 
-`make run` passes the project Makefile's `OUTPUT_FILE` to `sbatch --output` and downloads that file. This option overrides any `#SBATCH --output` in the script. Relative paths and `%j` (job ID) are supported; other Slurm filename substitutions, absolute paths, job arrays and separate stderr files are not automatically downloaded. Paths must use simple characters, without spaces or `..`. Use `make pull` for other files. The output's parent directory must already exist on the cluster. If the job fails, the workflow attempts to download its output before reporting the failure.
+## 5. Choose which directory to copy
 
-## Examples
-
-Configure `.env` and run `make login` first. Each example has its own build Makefile and Slurm script. Choose the partition and account your site requires.
-
-### Plain C
-
-The default `examples/basic_c` builds and runs a small C program:
-
-```sh
-make run SRC_DIR=examples/basic_c
-```
-
-### Different compilation flags
-
-The top-level `COMPILER_FLAGS` replaces the child project's default `CFLAGS`; `LINKER_FLAGS` sets `LDFLAGS`. The basic C example uses a compile-time `VERBOSE` option as a simple preprocessor-flag demonstration. Use `REBUILD=1` when changing flags: Make does not automatically rebuild just because flags changed.
-
-```sh
-make run SRC_DIR=examples/basic_c REBUILD=1 COMPILER_FLAGS='-O0 -g -Wall -DVERBOSE'
-```
-
-For optimized builds, use e.g. `COMPILER_FLAGS='-O3 -Wall'`. Project-specific Make variables can also be supplied with `BUILD_ARGS`, for example `BUILD_ARGS='CPPFLAGS=-DVERBOSE'`. These settings affect the build, so use the same settings on subsequent rebuilds.
-
-### OpenMP
-
-Based on the original thread greeting and thread-count sweep, this example builds with `-fopenmp` and runs with 1, 2 and 4 threads within a four-CPU allocation:
+`SRC_DIR` is the local project directory to copy to the cluster. For one command, set it like this:
 
 ```sh
 make run SRC_DIR=examples/openmp
 ```
 
-Use a compiler with OpenMP support; load the appropriate module with `MODULES` if needed. When overriding `COMPILER_FLAGS`, include `-fopenmp` yourself (or your compiler's equivalent). Adjust `--cpus-per-task` and the thread counts together to match your allocation.
+To change the default, edit `SRC_DIR` in the root `.env`. The project is copied to `~/REMOTE_DIR/SRC_DIR` on the cluster. Use simple relative paths without spaces. Files already on the cluster are not deleted. `.env` files are not copied.
 
-### CUDA
+For your own project, follow the examples: provide a `Makefile` with an `OUTPUT_FILE` variable and a `slurm.sl` script. You can also add a project-specific `.env` inside your project directory to override the root settings; command-line settings take priority over both. Set `SRC_DIR` in the root `.env` or on the command line, not in the project `.env`.
 
-The original project includes an incomplete CUDA Mandelbrot skeleton. This standalone example instead demonstrates the same GPU kernel-launch pattern without its additional libraries. It needs the CUDA toolkit (`nvcc`) and an NVIDIA GPU:
+## 6. Compile and run OpenMP
 
 ```sh
-# Replace the partition and module with names provided by your cluster.
-make run SRC_DIR=examples/cuda PARTITION=gpu MODULES=cuda
+make run SRC_DIR=examples/openmp
+cat downloads/output.txt
 ```
 
-The sample script requests one GPU with `--gres=gpu:1`; adapt that directive to your site's Slurm policy. `MODULES` is loaded before build and submission; make sure the module environment is also available inside jobs on your site. The CUDA Makefile uses `NVCC` and `NVCCFLAGS`, not `COMPILER` or `COMPILER_FLAGS`. For example, pass `BUILD_ARGS='NVCCFLAGS=-O3' REBUILD=1` to `make run` with a toolkit that defaults to C++11 or later. Select architecture flags supported by your toolkit and GPU as needed. The build allocation uses the same partition as the job; choose a partition that permits builds.
+This example uses 1, 2 and 4 CPU threads. It needs a compiler with OpenMP support. If your cluster requires a compiler module, add for example `MODULES=gcc` to the `make run` command, using the module name supplied by your cluster. If you change `COMPILER_FLAGS`, include the compiler's OpenMP flag (such as `-fopenmp`).
 
-## Commands
+## 7. Compile and run CUDA
 
-| Command | Action |
+You need an NVIDIA GPU and the CUDA toolkit on the cluster. Replace `gpu` and `cuda` below with your cluster's GPU partition and CUDA module names:
+
+```sh
+make run SRC_DIR=examples/cuda PARTITION=gpu MODULES=cuda
+cat downloads/output.txt
+```
+
+The Slurm script requests one GPU using `--gres=gpu:1`; your cluster may require a different setting. The chosen partition must also allow compilation. If needed, edit `examples/cuda/slurm.sl` or ask your cluster administrator.
+
+## Open an interactive terminal on a compute node
+
+After logging in, open a shell on the cluster:
+
+```sh
+make shell
+```
+
+You are now on the cluster's login node. To request an interactive compute node, run the following **in that cluster shell**, replacing the partition and account with your own:
+
+```sh
+srun --partition=YOUR_PARTITION --account=YOUR_ACCOUNT --time=00:30:00 --pty bash -l
+```
+
+Omit `--account=YOUR_ACCOUNT` if your site does not require an account. The command may wait in the queue before opening the compute-node shell. Run `exit` to leave the compute node, then `exit` again to return to your computer. Cluster policies and available resources vary; check your site's instructions if this command fails.
+
+## Other useful commands
+
+Run these on your computer, from the repository directory:
+
+| Command | What it does |
 | --- | --- |
-| `make login` / `make logout` / `make status` | Open, close or check reusable SSH connections |
-| `make sync` | Copy the selected project to the cluster |
-| `make run` | Sync, build in an `srun` allocation, submit, wait and download Slurm output |
-| `make run REBUILD=1` | As above, forcing the project Makefile to rebuild with `make -B` |
-| `make all` | Alias for `make run` |
-| `make pull` | Download `PULL_FROM` (relative to remote project root) into `PULL_TO` |
-| `make queue` / `make cancel JOB_ID=123` | List your jobs / cancel a specific job |
-| `make shell` | Open a cluster shell |
+| `make queue` | Show your queued and running jobs |
+| `make cancel JOB_ID=123` | Cancel job 123 |
+| `make sync` | Copy the selected project without running it |
 | `make exec CMD='pwd'` | Run a command in the remote project root |
-| `make clean-remote` | Run `make clean` in the remote source directory |
+| `make status` | Check the saved SSH connections |
+| `make logout` | Close the saved SSH connections |
 
-## Configuration
-
-`.env` files are Makefile fragments, not shell scripts. The root `.env` provides shared settings; an optional `$(SRC_DIR)/.env` overrides them for the selected project, and command-line assignments take precedence over both. Set `SRC_DIR` in the root `.env` or on the command line, not in the project `.env`. For example, copy `examples/cuda/.env.example` to `examples/cuda/.env` to set that project's partition and modules. These files are Git-ignored and excluded from synchronization; do not store secrets in them.
-
-The output filename is defined separately as `OUTPUT_FILE` in each project's Makefile (and may be overridden on the command line). For example, `make run SRC_DIR=examples/basic_c OUTPUT_FILE=basic_c-%j.txt` downloads the job-specific file. Other command-line settings work as usual, for example `make run COMPILER=mpicc REBUILD=1`.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `HPC_USER`, `HPC_CENTRAL`, `CLUSTER` | required | Login, gateway hostname and cluster hostname |
-| `HPC_ACCOUNT` | empty | Slurm account; omitted when empty |
-| `PARTITION` | `$(CLUSTER)` | Slurm partition; set empty to use the site default |
-| `REMOTE_DIR`, `SRC_DIR` | `hpc-make-workflow`, `examples/basic_c` | Remote root under home and local project directory |
-| `COMPILER`, `COMPILER_FLAGS`, `LINKER_FLAGS` | `gcc`, empty, empty | Passed to child Make as `CC`, `CFLAGS`, `LDFLAGS` |
-| `BUILD_ARGS`, `TARGET` | empty | Extra child Make arguments and optional `TARGET` variable |
-| `BUILD_TIME`, `SRUN_CMD` | `00:05:00`, `srun` | Build allocation time and launcher |
-| `MODULES` | empty | Module names loaded before build and job submission |
-| `SLURM_SCRIPT` | `slurm.sl` | Script inside the selected source directory |
-| `OUTPUT_FILE` | defined in project Makefile | Slurm output path relative to the project directory |
-| `REBUILD` | `0` | Set to `1` to force rebuilding with `make -B` |
-| `PULL_FROM`, `PULL_TO` | `$(SRC_DIR)/output.txt`, `downloads` | Remote relative path and local destination directory |
-| `PERSIST` | `2h` | SSH connection reuse duration |
-
-Account and partition are passed to both `srun` and `sbatch`, and command-line Slurm options override matching script directives. Module availability and allocation policies vary by site; adjust the script and settings for your cluster. Settings and commands are trusted shell/Make input; avoid untrusted values.
+The workflow generates its own SSH configuration rather than reading `~/.ssh/config`. If your connection requires a custom identity file or other SSH settings, add them to the `cfg` recipe in the top-level `Makefile`.
