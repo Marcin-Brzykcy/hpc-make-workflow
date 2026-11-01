@@ -1,4 +1,5 @@
 TARGET ?= openmp
+OUTPUT_FILE = output.txt
 ifeq ($(origin CC),default)
 CC = gcc
 endif

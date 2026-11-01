@@ -4,6 +4,9 @@
 
 REMOTE_DIR ?= hpc-make-workflow
 SRC_DIR ?= examples/hello
+# Project settings override the root .env; command-line assignments override both.
+-include $(SRC_DIR)/.env
+
 PARTITION ?= $(CLUSTER)
 COMPILER ?= gcc
 COMPILER_FLAGS ?=
@@ -13,6 +16,8 @@ BUILD_TIME ?= 00:05:00
 SRUN_CMD ?= srun
 MODULES ?=
 SLURM_SCRIPT ?= slurm.sl
+# Ask the selected project Makefile for its OUTPUT_FILE without loading its rules here.
+OUTPUT_FILE ?= $(shell printf '%s\n' '.PHONY: __workflow_output' '__workflow_output:' '    @echo $$(OUTPUT_FILE)' | sed 's/^    /\	/' | env MAKEFLAGS= MFLAGS= $(MAKE) -s --no-print-directory -C '$(SRC_DIR)' -f Makefile -f - __workflow_output)
 PULL_FROM ?= $(SRC_DIR)/output.txt
 PULL_TO ?= downloads
 PERSIST ?= 2h
@@ -70,17 +75,20 @@ status: cfg
 	-$(SSH) -O check hpc-cluster
 sync: cfg
 	$(SSH) hpc-cluster "mkdir -p $(REMOTE_DIR)/$(SRC_DIR)"
-	rsync -avz --exclude 'output.txt' -e "$(SSH)" "$(SRC_DIR)/" "hpc-cluster:$(REMOTE_DIR)/$(SRC_DIR)/"
+	rsync -avz --exclude '.env' --exclude 'output.txt' --exclude '$(OUTPUT_FILE)' -e "$(SSH)" "$(SRC_DIR)/" "hpc-cluster:$(REMOTE_DIR)/$(SRC_DIR)/"
 _build: cfg
 	$(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && $(SRUN_CMD) $(PARTITION_ARG) $(ACCOUNT_ARG) --nodes=1 --ntasks=1 --time=$(BUILD_TIME) bash -lc '$(MODULE_LOAD)make $(if $(filter 1,$(REBUILD)),-B,) CC=$(COMPILER) $(CFLAGS_ARG) $(LDFLAGS_ARG) $(TARGET_ARG) $(BUILD_ARGS)'"
 # Recursive calls preserve ordering even under make -j.
 run:
-	@./scripts/slurm-output.sh "$(SRC_DIR)/$(SLURM_SCRIPT)" >/dev/null
+	@test -f "$(SRC_DIR)/$(SLURM_SCRIPT)" || { echo 'Slurm script not found: $(SRC_DIR)/$(SLURM_SCRIPT)' >&2; exit 1; }
+	@output='$(OUTPUT_FILE)'; case "$$output" in ''|/*|*..*|*[!a-zA-Z0-9_./%+-]*) echo "Invalid OUTPUT_FILE: $$output" >&2; exit 1;; esac; \
+	  rest=$$(printf '%s' "$$output" | sed 's/%j//g'); \
+	  case "$$rest" in *%*) echo 'OUTPUT_FILE supports only the %j Slurm substitution' >&2; exit 1;; esac
 	+$(MAKE) sync
 	+$(MAKE) _build
-	@output=$$(./scripts/slurm-output.sh "$(SRC_DIR)/$(SLURM_SCRIPT)") || exit $$?; \
+	@output='$(OUTPUT_FILE)'; \
 	  status=0; \
-	  job=$$($(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && bash -lc '$(MODULE_LOAD)sbatch --parsable --wait $(PARTITION_ARG) $(ACCOUNT_ARG) $(SLURM_SCRIPT)'") || status=$$?; \
+	  job=$$($(SSH) hpc-cluster "cd $(REMOTE_DIR)/$(SRC_DIR) && bash -lc '$(MODULE_LOAD)sbatch --parsable --wait --output=$(OUTPUT_FILE) $(PARTITION_ARG) $(ACCOUNT_ARG) $(SLURM_SCRIPT)'") || status=$$?; \
 	  job=$${job%%;*}; \
 	  case "$$job" in ''|*[!0-9]*) echo "Could not determine Slurm job ID: $$job" >&2; exit 1;; esac; \
 	  echo "Slurm job $$job finished (status $$status)"; \

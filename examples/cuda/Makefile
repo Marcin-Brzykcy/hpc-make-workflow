@@ -1,4 +1,5 @@
 TARGET ?= cuda-example
+OUTPUT_FILE = output.txt
 NVCC ?= nvcc
 NVCCFLAGS ?= -O2 -std=c++11
 
