@@ -1,6 +1,7 @@
 .env
 .hpc/
 downloads/
+src/
 examples/basic_c/basic_c
 examples/openmp/openmp
 examples/cuda/cuda-example
