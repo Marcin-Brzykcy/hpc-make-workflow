@@ -1,10 +1,10 @@
 .env
 .hpc/
 downloads/
-examples/hello/hello
+examples/basic_c/basic_c
 examples/openmp/openmp
 examples/cuda/cuda-example
-examples/hello/output.txt
+examples/basic_c/output.txt
 *.o
 *.dSYM/
 .DS_Store

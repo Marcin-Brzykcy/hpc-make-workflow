@@ -19,7 +19,7 @@ cat downloads/output.txt
 make logout
 ```
 
-The example builds `examples/hello/hello.c` using its own Makefile and runs it using `examples/hello/slurm.sl`. `make run` waits for the job and downloads its Slurm output to `downloads/`. SSH verifies gateway and cluster host keys against your known-hosts files. The workflow uses its own generated `.hpc/ssh_config` instead of `~/.ssh/config` and reuses SSH connections for two hours by default. If you need custom SSH settings (such as a non-default identity), add them to the `cfg` recipe. `.env`, `.hpc/` and downloaded output are ignored by Git.
+The example builds `examples/basic_c/basic_c.c` using its own Makefile and runs it using `examples/basic_c/slurm.sl`. `make run` waits for the job and downloads its Slurm output to `downloads/`. SSH verifies gateway and cluster host keys against your known-hosts files. The workflow uses its own generated `.hpc/ssh_config` instead of `~/.ssh/config` and reuses SSH connections for two hours by default. If you need custom SSH settings (such as a non-default identity), add them to the `cfg` recipe. `.env`, `.hpc/` and downloaded output are ignored by Git.
 
 ## Your own project
 
@@ -40,18 +40,18 @@ Configure `.env` and run `make login` first. Each example has its own build Make
 
 ### Plain C
 
-The default `examples/hello` builds and runs a small C program:
+The default `examples/basic_c` builds and runs a small C program:
 
 ```sh
-make run SRC_DIR=examples/hello
+make run SRC_DIR=examples/basic_c
 ```
 
 ### Different compilation flags
 
-The top-level `COMPILER_FLAGS` replaces the child project's default `CFLAGS`; `LINKER_FLAGS` sets `LDFLAGS`. The hello example uses a compile-time `VERBOSE` option as a simple preprocessor-flag demonstration. Use `REBUILD=1` when changing flags: Make does not automatically rebuild just because flags changed.
+The top-level `COMPILER_FLAGS` replaces the child project's default `CFLAGS`; `LINKER_FLAGS` sets `LDFLAGS`. The basic C example uses a compile-time `VERBOSE` option as a simple preprocessor-flag demonstration. Use `REBUILD=1` when changing flags: Make does not automatically rebuild just because flags changed.
 
 ```sh
-make run SRC_DIR=examples/hello REBUILD=1 COMPILER_FLAGS='-O0 -g -Wall -DVERBOSE'
+make run SRC_DIR=examples/basic_c REBUILD=1 COMPILER_FLAGS='-O0 -g -Wall -DVERBOSE'
 ```
 
 For optimized builds, use e.g. `COMPILER_FLAGS='-O3 -Wall'`. Project-specific Make variables can also be supplied with `BUILD_ARGS`, for example `BUILD_ARGS='CPPFLAGS=-DVERBOSE'`. These settings affect the build, so use the same settings on subsequent rebuilds.
@@ -96,14 +96,14 @@ The sample script requests one GPU with `--gres=gpu:1`; adapt that directive to 
 
 `.env` files are Makefile fragments, not shell scripts. The root `.env` provides shared settings; an optional `$(SRC_DIR)/.env` overrides them for the selected project, and command-line assignments take precedence over both. Set `SRC_DIR` in the root `.env` or on the command line, not in the project `.env`. For example, copy `examples/cuda/.env.example` to `examples/cuda/.env` to set that project's partition and modules. These files are Git-ignored and excluded from synchronization; do not store secrets in them.
 
-The output filename is defined separately as `OUTPUT_FILE` in each project's Makefile (and may be overridden on the command line). For example, `make run SRC_DIR=examples/hello OUTPUT_FILE=hello-%j.txt` downloads the job-specific file. Other command-line settings work as usual, for example `make run COMPILER=mpicc REBUILD=1`.
+The output filename is defined separately as `OUTPUT_FILE` in each project's Makefile (and may be overridden on the command line). For example, `make run SRC_DIR=examples/basic_c OUTPUT_FILE=basic_c-%j.txt` downloads the job-specific file. Other command-line settings work as usual, for example `make run COMPILER=mpicc REBUILD=1`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `HPC_USER`, `HPC_CENTRAL`, `CLUSTER` | required | Login, gateway hostname and cluster hostname |
 | `HPC_ACCOUNT` | empty | Slurm account; omitted when empty |
 | `PARTITION` | `$(CLUSTER)` | Slurm partition; set empty to use the site default |
-| `REMOTE_DIR`, `SRC_DIR` | `hpc-make-workflow`, `examples/hello` | Remote root under home and local project directory |
+| `REMOTE_DIR`, `SRC_DIR` | `hpc-make-workflow`, `examples/basic_c` | Remote root under home and local project directory |
 | `COMPILER`, `COMPILER_FLAGS`, `LINKER_FLAGS` | `gcc`, empty, empty | Passed to child Make as `CC`, `CFLAGS`, `LDFLAGS` |
 | `BUILD_ARGS`, `TARGET` | empty | Extra child Make arguments and optional `TARGET` variable |
 | `BUILD_TIME`, `SRUN_CMD` | `00:05:00`, `srun` | Build allocation time and launcher |

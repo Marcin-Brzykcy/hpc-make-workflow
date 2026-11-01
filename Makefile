@@ -3,7 +3,7 @@
 -include .env
 
 REMOTE_DIR ?= hpc-make-workflow
-SRC_DIR ?= examples/hello
+SRC_DIR ?= examples/basic_c
 # Project settings override the root .env; command-line assignments override both.
 -include $(SRC_DIR)/.env
 

@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=hello
+#SBATCH --job-name=basic_c
 #SBATCH --output=output.txt
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -7,4 +7,4 @@
 #SBATCH --mem=128M
 
 set -e
-srun ./hello
+srun ./basic_c

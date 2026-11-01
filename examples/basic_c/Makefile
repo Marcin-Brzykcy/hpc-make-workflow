@@ -1,4 +1,4 @@
-TARGET ?= hello
+TARGET ?= basic_c
 OUTPUT_FILE = output.txt
 ifeq ($(origin CC),default)
 CC = gcc
@@ -8,7 +8,7 @@ CFLAGS ?= -O2 -Wall -Wextra
 .PHONY: all clean
 all: $(TARGET)
 
-$(TARGET): hello.c
+$(TARGET): basic_c.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 clean:
