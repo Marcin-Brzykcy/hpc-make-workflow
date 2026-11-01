@@ -1,0 +1,7 @@
+.env
+.hpc/
+downloads/
+examples/hello/hello
+examples/hello/output.txt
+*.o
+.DS_Store
